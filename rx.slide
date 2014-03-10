@@ -1,0 +1,331 @@
+Introduction to Reactive Programming
+using RxJava
+
+Sergiusz Urbaniak
+
+surbaniak@ebay.com
+
+* The sales pitch ...
+
+Many applications behave like this:
+
+.link http://localhost:6060/Old%20school?it=50&delay=100&nl Old school app
+
+- We are blocking the user experience
+- We are blocking server side resources (threads)
+
+What we'd rather like is having something like this:
+
+.link http://localhost:6060/Reactive?it=50&delay=100&html Reactive app :-)
+
+- We have a responsive user experience
+- Release server side resources even if response is not yet fully committed
+
+* Reactive Programming
+
+"In computing, reactive programming is a programming paradigm oriented around data flows and the propagation of change." - Wikipedia
+
+.link http://en.wikipedia.org/wiki/Reactive_programming
+
+"Reactive programming facilitates the development of ... applications by providing abstractions to express time-varying values and automatically managing dependencies between such values" - Bainomugisha et al.
+
+.link ftp://progftp.vub.ac.be/tech_report/2012/vub-soft-tr-12-13.pdf
+
+* Example
+
+	var1 = 1
+	var2 = 2
+	var3 = var1 + var2
+
+Imperative programming:
+
+- var3 will always contain the result 3
+- if var1 or var2 change over time, var3 is not affected
+
+Reactive programming:
+
+- var3 will be automatically recomputed whenever var1 or var2 changes
+- var3 is dependent on var1 and var2
+
+* But we have callbacks!
+
+- Control of events in many event handlers
+- State changes are handled in many places
+- Handling data dependencies is complex and error-prone
+- Callbacks don't have return values, must perform side-effects
+
+Callback _hell_
+
+Adobe desktop applications revealed that event handling logic contributes to nearly a half of the bugs reported - Järvi et al. 2008
+
+- Callbacks encourage communication by _sharing_ data :-(
+- We want to share data by _communicating_ :-)
+
+* Models of reactive programming
+
+- Scala: Actors
+- Erlang: Actors
+- Javascript: Bacon.js, RX-JS
+- Verilog: FPGA (hardware) programming
+- Clojure: CSP, Actors
+- Google Go: CSP (check this one out!) :-)
+- *Java*: Actors, RxJava (also for Android)
+
+* Rx - Erik Meijer
+
+.image images/meijer.jpg 220 300
+
+- Computer scientist
+- Work on reactive extensions in C# (yes ... that's Microsoft)
+
+.link http://en.wikipedia.org/wiki/Erik_Meijer_(computer_scientist) en.wikipedia.org/wiki/Erik_Meijer
+
+* Rx - Future vs. Observable
+
+*Single* future value:
+
+	Future<T>
+
+.image images/future.png
+
+*Multiple* future values:
+
+	Observable<T>
+
+.image images/observable.png
+
+Handle _multiple_ future values not single instances.
+
+* Rx - Iterable vs. Observable
+
+All values in memory:
+
+	Iterable<T>
+
+.image images/iterable.png
+
+Eventually streamed values in the future:
+
+	Observable<T>
+
+.image images/observable.png
+
+Treat future values like _Iterables_.
+
+Piggy-pack on the functional model in order to implement the reactive one.
+
+*Beware:* It gets functional, with all the bells and whistles!
+
+* Becoming reactive ... with Futures?
+
+	String result1 = http1.execute().get();
+	String result2 = http2.execute().get();
+
+	see _01Future
+
+Response time: t(http1) + t(http2)
+
+	Future<String> f1 = http1.execute();
+	Future<String> f2 = http2.execute();
+
+	f1.get();
+	f2.get();
+
+	see _02Future
+
+Response time: max(t(http1), t(http2))
+
+- What if f2 returns first?
+- Can't we already return data once f1 or f2 respond?
+- What if we need to process the returned data from f1 and f2?
+
+* Rx: The ingredients ...
+
+	public interface Observer<T> {
+	
+	    public void onCompleted();
+	
+	    public void onError(Throwable e);
+	
+	    public void onNext(T args);
+	}
+
+- An observer is the receiver of the event stream
+- In addition to the classical approach here you have:
+1. An error handler
+2. A completion handler
+
+.link http://en.wikipedia.org/wiki/Observer_pattern
+
+* Rx: ... and some sugar ...
+
+	public interface Subscription {
+
+	    public void unsubscribe();
+
+		public boolean isUnsubscribed();
+
+	}
+
+- An observer subscribes to an Observable
+- If it is not interested in the stream any more, it can unsubscribe
+
+.link http://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern en.wikipedia.org/wiki/Publish-subscribe pattern
+
+* Rx: ... the hybrid ...
+
+	public abstract class Subscriber<T> implements Observer<T>, Subscription {
+	
+		// ...
+
+		public final void add(Subscription s) { ... }
+
+	}
+
+- A subscriber is an observer which can unsubscribe
+- Can be subscribed to many subscriptions
+
+* Rx: ... and finally the cook
+
+	public static interface OnSubscribe<T> extends Action1<Subscriber<? super T>> { }
+
+or in functional notation:
+
+	(Subscriber) -> ()
+
+- A *function* which is invoked whenever an Subscriber wants to subscribe
+- Adds a subscription to the Subscriber
+
+* Rx: A real live example, from top to bottom
+
+Define a OnSubscribe function:
+
+	ResponseOnSubscribe
+
+And a static factory method:
+
+	NingObservable#create(...)
+
+Create the Observable and execute it (synchronously for now):
+
+	Observable<Response> obs1 = NingObservable.create(client.prepareGet("http://somewhere"));
+	Response res = obs1.toBlockingObservable().first();
+
+Watch the output:
+
+	com.ning.http.client.providers.netty.NettyResponse@59f99ea
+
+How do we get the response body?!
+
+* Rx: map
+
+	com.ning.http.client.Response -> java.util.String
+
+.image images/map.png 300 600
+
+* Rx: Recap
+
+- Is our current solution reactive?
+- Can we do better?
+
+Yes
+
+- The server responds in chunks
+- Why not treat each chunk as a seperate event?
+
+	ChunkedOnSubscribe
+
+* Let's play ... with JDK8!
+
+- Observable#take(...)
+- Observable#merge(...)
+- Observable#zip(...)
+- Observable#buffer(...)
+- Observable#retry(...)
+
+find out the others by yourself ... and the bugs too ;)
+
+* Rx: flatMap
+
+What if we have nested Observables?
+
+	Observable<Observable<Chunk>>
+
+.image images/flatMap.png 300 600
+
+* Rx: Beware of the unsubscribe!
+
+Although you may not unsubscribe yourself ever, some Observable methods do!
+
+.image images/taket.png 300 600
+
+- What to do with all the events after the timeout?
+- Answer: unsubscribe after the timeout.
+
+* Rx: beware of hot and cold observables!
+
+- What if we want to measure AND print out the output?
+- We have _two_ subscribers!
+
+*Cold* Observable:
+
+Streams that are passive and start producing events on request (when subscribed to)
+
+*Hot* Observable:
+
+Streams that are active and produce events regardless of subscriptions
+
+.link http://www.introtorx.com/content/v1.0.10621.0/14_HotAndColdObservables.html introtorx/14_HotAndColdObservables.html
+
+* Rx: Hot/cold
+
+Hot observables:
+
+- mouse movements
+- timer events
+- broadcasts like ESB channels or UDP network packets.
+- price ticks from a trading exchange
+
+Cold observables:
+
+- Asynchronous request
+- whenever Observable.create is used
+- Subscriptions to queues
+- On-demand sequences
+
+* Rx: Schedulers
+
+- Rx is *single-threaded* by default
+- In the previous examples we *explicitly* scheduled asynchronous events
+
+Rx provides schedulers which let you choose where to schedule:
+
+1. the subscription
+2. the observation
+
+Useful for:
+- Integration with existing blocking APIs
+- Integration in fat clients (i.e. Android/Swing) where the observation has to happen on the UI thread
+
+.link https://github.com/Netflix/RxJava/tree/master/rxjava-contrib/rxjava-android github.com/rxjava-android
+
+* Rx: Integration in Servlet 3.0
+
+- Easy integration in async frameworks (Servlet >3.0, Vert.x, call your favorite)
+- If stuck in synchronous world (i.e. Servlet 2.5), use toBlockingObservable
+
+Higher level abstractions:
+
+.link https://github.com/mati1979/spring-async-currency-rates/blob/master/src/main/java/pl/matisoft/soy/example/CurrencyAsyncController4.java mati1979/CurrencyAsyncController4
+
+* Links
+
+.link https://github.com/s-urbaniak/rxtalk.java This presentation samples
+.link https://github.com/s-urbaniak/slowserver slowserver in Google Go (dummy server)
+.link https://class.coursera.org/reactive-001/class Coursera - Principles of Reactive Programming
+.link http://www.heise.de/developer/artikel/Episode-42-Interview-mit-Erik-Meijer-2111416.html heise.de - Interview mit Erik Meijer
+.link http://www.youtube.com/watch?v=DA0ZAnxUKDk RxJava in Android @ Soundcloud
+.link https://skillsmatter.com/skillscasts/4834-conquering-concurrency-bringing-the-reactive-extensions-to-the-android-platform Bringing the Reactive Extensions to the Android platform
+.link http://javaposse.com/java-posse-432 Java Posse Roundap #13 - Reactive Programming
+.link http://www.infoq.com/presentations/reactive-programming-netflix Reactive Programming at Netflix (Javascript)
+.link https://github.com/mati1979/spring-async-currency-rates
